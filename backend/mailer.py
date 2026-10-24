@@ -90,7 +90,7 @@ def _lep_by_tract() -> dict[str, dict[str, float]]:
     path = DATA / "acs_language.json"
     if not path.exists():
         data = requests.get(ACS, timeout=60, headers={  # Census Reporter asks for a project-specific UA
-            "User-Agent": "detroit-foreclosure-early-warning (github.com/saeedconsulting/project2)"}).json()["data"]
+            "User-Agent": "detroit-foreclosure-early-warning (github.com/esaeed1/project2)"}).json()["data"]
         shares = {}
         for geo, tables in data.items():  # "14000US26163544800" -> tract GEOID "26163544800"
             e = tables["C16001"]["estimate"]
