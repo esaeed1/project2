@@ -7,8 +7,13 @@ app.py: JSON API for the Lovable front end.
   POST /api/signup {address, phone?, email?, lang?} save an alert sign-up and send the first alert
   GET  /api/help                                    help links
 
+Staff only (header X-Staff-Key: $STAFF_KEY; off when STAFF_KEY is unset):
+  GET  /api/staff/red                               RED homes checked so far, with any postcard sent
+  POST /api/staff/postcards {keys: [...]}           mail postcards to those homes through Lob
+
     python app.py          # http://localhost:5000  (PORT overrides)
 """
+import hmac
 import os
 import re
 
@@ -18,6 +23,7 @@ from flask import Flask, jsonify, request
 from build_map import map_data
 from letter import letter
 from lookup import HELP, cached_lookup, connect, parcel_for
+from mailer import mail_postcards, mode, red_homes
 from notify import notify
 
 app = Flask(__name__)
@@ -27,9 +33,18 @@ EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 @app.after_request
 def cors(resp):
     resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Staff-Key"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
+
+
+@app.before_request
+def staff_only():
+    """The RED list names houses, so only staff holding STAFF_KEY can see it."""
+    if request.path.startswith("/api/staff/") and request.method != "OPTIONS":
+        key = os.environ.get("STAFF_KEY", "")
+        if not key or not hmac.compare_digest(request.headers.get("X-Staff-Key", "").encode(), key.encode()):
+            return jsonify(error="Wrong or missing staff key."), 401
 
 
 @app.errorhandler(requests.RequestException)
@@ -92,6 +107,21 @@ def api_signup():
     con.close()
     sent = notify(phone, email, result)
     return jsonify(ok=True, status=result, sent={k: v.get("success") for k, v in sent.items()})
+
+
+@app.get("/api/staff/red")
+def api_staff_red():
+    return jsonify(mailer=mode(), homes=red_homes())
+
+
+@app.post("/api/staff/postcards")
+def api_staff_postcards():
+    keys = (request.get_json(silent=True) or {}).get("keys")
+    if not keys or not isinstance(keys, list):
+        return jsonify(error="Pick at least one home."), 400
+    if not mode():
+        return jsonify(error="No mailer connected: set LOB_API_KEY."), 503
+    return jsonify(mailer=mode(), results=mail_postcards([str(k) for k in keys]))
 
 
 if __name__ == "__main__":

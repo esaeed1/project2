@@ -39,6 +39,11 @@ python app.py                           # http://localhost:5000
 
 Try it: `http://localhost:5000/api/lookup?address=14325 Rockdale`
 
+For a demo, `1 Example St` through `4 Example St` are made-up houses that show
+each result card (act now, unpaid taxes, paid up, not found) without calling the
+county. Orange (forfeited) can only happen from April to September: from October
+to March every forfeited home is already within 6 months of its March 31 deadline.
+
 ### Environment
 
 | Variable | For |

@@ -23,8 +23,7 @@ REMIND_AT_DAYS = {120, 90, 60, 30, 14, 7, 3, 1}
 
 def alert_text(result: dict) -> str:
     return (f"Detroit tax alert for {result.get('address') or result['query']}: {result['message']} "
-            f"Free help: UCHC 313-963-3310. Payment plans: Wayne County Treasurer 313-224-5990. "
-            f"Reply STOP to opt out.")
+            f"Free help: UCHC 313-963-3310. Reply STOP to opt out.")
 
 
 def send_email(to: str, subject: str, body: str) -> dict:

@@ -28,6 +28,10 @@ neighborhood polygons around Detroit with different `color` values.
    One input ("Your street address, e.g. 1234 Example St") and a "Check my
    house" button. Call `GET {API_URL}/api/lookup?address=<urlencoded>`. It can
    take up to 5 seconds, so show a spinner reading "Checking Wayne County tax records…".
+   Under the button, a row of small chips labeled "Try an example:" — **Act now**
+   (`1 Example St`), **Unpaid taxes** (`2 Example St`), **Paid up** (`3 Example St`),
+   **Not found** (`4 Example St`). Tapping one fills the input with that address and
+   runs the same lookup. These are made-up houses the API answers itself.
 2. **Result card** (shown after a lookup). See "Result card".
 3. **Map** of risk by neighborhood. See "Map".
 4. **Get alerts** sign-up form. See "Alerts".
@@ -60,7 +64,15 @@ Response:
     {"year": 2024, "tax": 938.53, "interest_fees": 609.10, "due": 1547.63, "status": "SUBJECT TO FORECLOSURE"},
     {"year": 2025, "tax": 450.00, "interest_fees": 142.37, "due": 592.37, "status": "DELINQUENT"}
   ],
-  "message": "You owe $2,140.00 in back property taxes (2024, 2025). If the 2024 taxes are not paid or put on a payment plan by March 31, 2027, Wayne County will take ownership of this house. That is 158 days from today.",
+  "surplus_claim_by": "2027-07-01",
+  "surplus_claim_form": "https://www.michigan.gov/taxes/-/media/Project/Websites/taxes/Forms/Property-Tax/5743.pdf",
+  "laws": [
+    {"cite": "MCL 211.78k", "url": "https://www.legislature.mi.gov/Laws/MCL?objectName=mcl-211-78k",
+     "rule": "If the taxes are not paid by the March 31 after the court's foreclosure judgment, the county takes the title and you can no longer pay to keep the house."},
+    {"cite": "MCL 211.78t", "url": "https://www.legislature.mi.gov/Laws/MCL?objectName=mcl-211-78t",
+     "rule": "If the county sells the house for more than you owed (plus its costs and a 5% fee), you can claim the rest, but only if you file a notarized Form 5743 by the July 1 after the foreclosure."}
+  ],
+  "message": "You owe $2,140.00 in back property taxes (2024, 2025). Under Michigan law (MCL 211.78k), if the 2024 taxes are not paid or put on a payment plan by March 31, 2027, Wayne County will take ownership of this house. That is 158 days from today. If money is tight, apply for the HOPE tax exemption by November 6, 2026; qualifying also opens Pay As You Stay (PAYS), which lowers back taxes. If you own and live here, ask the Wayne County Treasurer (313-224-5990) about IRSPA, a payment plan with interest cut to 6%. If you can't pay at all, file a notarized Form 5743 with the Wayne County Treasurer by July 1, 2027 (https://www.michigan.gov/taxes/-/media/Project/Websites/taxes/Forms/Property-Tax/5743.pdf): if the county sells the house for more than you owe, Michigan law (MCL 211.78t) lets you claim the rest.",
   "help": [{"name": "...", "phone": "313-224-5990", "url": "https://...", "note": "..."}],
   "checked_at": "2026-10-24T11:02:13"
 }
@@ -84,6 +96,12 @@ When `at_risk` is true, show:
 - primary button **"Get alerts for this house"**, which scrolls to the Alerts form with the address filled in
 - secondary button **"Explain this in plain language"**, which calls the letter endpoint in the current language
 - the help cards from `help`, with `tel:` links on phone numbers
+- a **"Can't pay at all?"** box: "File Form 5743 by {surplus_claim_by formatted as
+  "July 1, 2027"} so you can claim any money left over if the county sells the house.
+  It must be notarized and sent to the Wayne County Treasurer by certified mail or
+  delivered in person." with a **"Get Form 5743"** button linking to `surplus_claim_form`
+- a collapsible **"What the law says"** list from `laws`: each `cite` as a link to
+  `url`, then `rule`. (The lookup returns five laws; the example above shows two.)
 
 ## Plain-language letter: `GET /api/letter?address=...&lang=en|es|ar`
 
@@ -152,6 +170,6 @@ under the form.
 
 ```json
 [{"name": "Wayne County Treasurer: pay or start a payment plan", "phone": "313-224-5990",
-  "url": "https://pta.waynecounty.com/", "note": "Owner-occupants can get IRSPA (5-year plan, 6% interest) or REGSPA."}]
+  "url": "https://pta.waynecounty.com/", "note": "Owner-occupants can get IRSPA (5-year plan, 6% interest) or REGSPA. Hardship? Ask about DOOE, an extension, and Pay As You Stay (PAYS), which lowers back taxes."}]
 ```
 Render each as a card: name, note, a "Call" button (`tel:`) when `phone` is set, and a "Website" link.
