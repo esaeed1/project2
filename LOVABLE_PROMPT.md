@@ -3,6 +3,12 @@
 Paste everything below the line into Lovable. Replace `API_URL` with the public
 URL of the Flask backend (see README, "Expose the API").
 
+Already built it and don't like the look? In the same Lovable project, paste the
+"Look and feel" section with this line in front: "Redesign the whole app to match
+the spec below. Keep every feature, route, API call, mock mode, translation and
+the /staff page working exactly as now. Rebuild the markup and styles from
+scratch instead of tweaking the current ones."
+
 ---
 
 Build a mobile-first, single-page web app called **"Keep Your Home Detroit"**: a
@@ -21,6 +27,49 @@ records right now. Try again in a minute.") and never crash.
 the example responses below (after a 600 ms delay) so the whole UI can be built
 and previewed before the API is online. For the map mock, draw 3 made-up
 neighborhood polygons around Detroit with different `color` values.
+
+## Look and feel
+
+It should feel like a trustworthy public notice, like a well-made city newspaper
+or a GOV.UK service page. It should not look like a tech startup template.
+
+- **Colors.** Set the shadcn theme variables in `src/index.css`: page background
+  warm paper `#FAF7F2`, cards white with a 1px `#E7E1D6` border, text `#1C1917`,
+  secondary text `#57534E`. One accent for buttons and links: navy `#1E3A5F`
+  (hover `#162C48`). Red, orange, yellow and green mean risk levels only. Never
+  use them for decoration.
+- **Type.** Headings: "Source Serif 4", weight 600. Body and UI: "Atkinson
+  Hyperlegible" (made for low-vision readers), 19px, line-height 1.6. Arabic:
+  "Noto Naskh Arabic". Load them from Google Fonts. Amounts and day counts use
+  tabular figures.
+- **Layout.** One column, max width 680px, centered, 20px side padding; only the
+  map may widen to 960px. Separate sections with 64px of space and a thin rule,
+  not colored bands. On a 375px-wide phone, the headline, address field and
+  button must all show without scrolling. No hero image.
+- **Header.** A plain serif wordmark "Keep Your Home Detroit", and the language
+  switch as three always-visible text buttons: English · Español · العربية (the
+  current one underlined). No hamburger menu.
+- **Fields and buttons.** 56px tall, full width on phones, 8px radius. Every
+  field has a visible label above it, not just a placeholder. Focus: 3px navy
+  outline, 2px offset.
+- **Result card.** Make it look like an official notice: a white card with an 8px
+  `border-inline-start` in the level color, a small uppercase label in that color
+  (ACT NOW, TAXES FORFEITED, UNPAID TAXES, PAID UP), then the headline. Days left
+  as a 64px serif number. Show the help cards as a numbered "What you can do"
+  list (1, 2, 3) with Call buttons. On phones, show each tax year as a small
+  stacked block instead of a sideways-scrolling table.
+- **Map.** A stat row of four plain numbers with labels (2×2 on phones, no icons).
+- **Icons.** Only where they carry meaning (phone, external link, expand
+  chevron): lucide-react, 20px. No emoji.
+- **Motion.** Only the spinners and a 150ms fade when the result appears. Respect
+  `prefers-reduced-motion`.
+- **Don't use:** gradients, glassmorphism, blurred blobs, shadows heavier than
+  `0 1px 2px rgba(0,0,0,.06)`, dark mode, purple, stock photos, illustrations,
+  testimonials or "trusted by" sections, made-up statistics, animated number
+  counters, carousels, or toast popups (show errors inline).
+- **Accessibility.** WCAG AA contrast, tap targets of at least 48px,
+  `aria-live="polite"` on the result area, `<html lang>` matches the language
+  switch. In Arabic the whole layout mirrors.
 
 ## Page layout (top to bottom)
 
@@ -137,8 +186,11 @@ Returns a GeoJSON FeatureCollection of Detroit neighborhoods, plus a top-level `
 }
 ```
 
-- Use **react-leaflet** with OpenStreetMap tiles (no API key), centered on Detroit
-  `[42.36, -83.10]`, zoom 11, about 420px tall on mobile.
+- Use **react-leaflet** with the light CARTO Positron basemap so the red shading
+  stands out (no API key):
+  `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`, attribution
+  "© OpenStreetMap contributors © CARTO". Center on Detroit `[42.36, -83.10]`,
+  zoom 11, about 420px tall on mobile.
 - Draw `features` with `fillColor = properties.color`, `fillOpacity 0.7`, a white 1px border.
 - On tap, show a popup: **{name}**, "{pct_red}% of homes checked face foreclosure
   within 6 months", "{pct_at_risk}% owe back taxes", "${total_owed} owed among {checked} homes checked".
