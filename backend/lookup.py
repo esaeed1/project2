@@ -5,7 +5,10 @@ foreclosure deadline that status implies.
 Source: the Treasurer's public search (same request as property_monitor's
 back_taxes()):
   POST https://pta.waynecounty.com/Home/SearchResult   (form-encoded)
-    MUN_CD=01 (Detroit)  PROP_STREET_NBR  PROP_STREET_NM  searchByAddressInd=AddressSearch
+    MUN_CD=01 (Detroit)  PARCEL_ID  searchByAddressInd=ParcelSearch
+    or                   PROP_STREET_NBR  PROP_STREET_NM  searchByAddressInd=AddressSearch
+  The address search misses ~7% of homes the parcel search finds, so the
+  parcel ID is looked up in data/parcels.csv (fetch_parcels.py) first.
   -> an HTML page. Each delinquent year is one <tr> in #tblTaxGrid carrying
      hidden inputs SearchResult[N].TAX_YEAR / BASE_TAX / INTEREST /
      TOTAL_AMOUNT_DUE, and the status as the name="" of a StatusHelp span.
@@ -18,6 +21,7 @@ The oldest unpaid year sets the deadline. Homes the county held back from an
 earlier foreclosure still show SUBJECT TO FORECLOSURE for older years; their
 deadline is the next March 31.
 """
+import csv
 import html as htmllib
 import json
 import re
@@ -37,6 +41,7 @@ CACHE_HOURS = 12
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 DB = DATA / "app.db"
+PARCELS = DATA / "parcels.csv"
 
 HOPE_DEADLINE = date(2026, 11, 6)   # detroitmi.gov/hope: 2026 applications due 4:30 pm
 
@@ -60,6 +65,8 @@ DIRECTIONS = {"NORTH": "N", "SOUTH": "S", "EAST": "E", "WEST": "W"}
 
 _lock = threading.Lock()
 _last = 0.0
+_parcels: dict[str, str] | None = None
+_parcels_lock = threading.Lock()
 
 
 def address_key(addr: str) -> str:
@@ -81,7 +88,20 @@ def _text(fragment: str) -> str:
     return re.sub(r"\s+", " ", htmllib.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
 
 
-def _fetch(number: str, street: str, retries: int = 2) -> str:
+def parcel_for(key: str) -> str | None:
+    """Detroit parcel ID for an address_key(), from data/parcels.csv (loaded once)."""
+    global _parcels
+    with _parcels_lock:
+        if _parcels is None:
+            _parcels = {}
+            if PARCELS.exists():
+                with open(PARCELS, newline="", encoding="utf-8") as f:
+                    for p in csv.DictReader(f):
+                        _parcels.setdefault(address_key(p["address"]), p["parcel_id"])
+    return _parcels.get(key)
+
+
+def _fetch(form: dict, retries: int = 2) -> str:
     global _last
     with _lock:
         wait = MIN_GAP - (time.time() - _last)
@@ -91,14 +111,13 @@ def _fetch(number: str, street: str, retries: int = 2) -> str:
     try:
         resp = requests.post(PTA, data={
             "MUN_CD": DETROIT, "PARCEL_ID": "", "PARCEL_SEARCH_MSG": "",
-            "PROP_STREET_NBR": number, "PROP_STREET_NM": street,
-            "frequency": "on", "searchByAddressInd": "AddressSearch",
+            "PROP_STREET_NBR": "", "PROP_STREET_NM": "", "frequency": "on", **form,
         }, headers={"User-Agent": "Mozilla/5.0"}, timeout=TIMEOUT)
     except requests.ConnectionError:  # the county's server resets ~1-2% of connections
         if not retries:
             raise
         time.sleep(2)
-        return _fetch(number, street, retries - 1)
+        return _fetch(form, retries - 1)
     resp.raise_for_status()
     return resp.text
 
@@ -189,7 +208,11 @@ def lookup(address: str) -> dict:
         return {"query": address, "found": False, "level": "unknown", "at_risk": None,
                 "message": "Enter a street address with a house number, like 14390 Dolphin.",
                 "help": HELP}
-    result = assess(parse(_fetch(m.group(1), m.group(2))))
+    parcel = parcel_for(key)
+    form = ({"PARCEL_ID": parcel, "searchByAddressInd": "ParcelSearch"} if parcel else
+            {"PROP_STREET_NBR": m.group(1), "PROP_STREET_NM": m.group(2),
+             "searchByAddressInd": "AddressSearch"})
+    result = assess(parse(_fetch(form)))
     return {"query": address, **result, "help": HELP,
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
 

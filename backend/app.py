@@ -17,7 +17,7 @@ from flask import Flask, jsonify, request
 
 from build_map import map_data
 from letter import letter
-from lookup import HELP, cached_lookup, connect
+from lookup import HELP, cached_lookup, connect, parcel_for
 from notify import notify
 
 app = Flask(__name__)
@@ -95,4 +95,5 @@ def api_signup():
 
 
 if __name__ == "__main__":
+    parcel_for("")  # load the parcel index now, not on the first visitor's lookup
     app.run(port=int(os.environ.get("PORT", 5000)))
