@@ -18,6 +18,10 @@ import re
 import requests
 
 LANGS = {"en": "English", "es": "Spanish", "ar": "Arabic"}
+# Small models follow "write in X" more reliably when it's said in X.
+IN_LANG = {"en": "Write the letter in English.",
+           "es": "Write the letter in Spanish. Escribe la carta solo en español.",
+           "ar": "Write the letter in Arabic. اكتب الرسالة باللغة العربية فقط."}
 
 SYSTEM = (
     "You write short, warm letters to Detroit homeowners about unpaid property taxes, at a "
@@ -65,6 +69,14 @@ def _tidy(text: str, cut_off: bool) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
+def _in_language(text: str, lang: str) -> bool:
+    """Arabic letters must be mostly Arabic script (qwen2.5:1.5b sometimes answers in English)."""
+    if lang != "ar":
+        return True
+    letters = [c for c in text if c.isalpha()]
+    return bool(letters) and sum("؀" <= c <= "ۿ" for c in letters) / len(letters) > 0.5
+
+
 def letter(result: dict, lang: str = "en") -> dict:
     lang = lang if lang in LANGS else "en"
     facts = {k: result.get(k) for k in
@@ -74,19 +86,23 @@ def letter(result: dict, lang: str = "en") -> dict:
     facts["help"] = [{k: h[k] for k in ("name", "phone", "url", "note")} for h in result.get("help", [])]
     model = os.environ.get("LLM_MODEL", "qwen2.5:1.5b")
     try:
-        resp = requests.post(
-            os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/") + "/chat/completions",
-            headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', 'ollama')}"},
-            json={"model": model, "temperature": 0.2, "max_tokens": 600, "messages": [
-                {"role": "system", "content": SYSTEM},
-                {"role": "user", "content": f"Write the letter in {LANGS[lang]}.\nFacts:\n"
-                                            + json.dumps(facts, indent=1)},
-            ]},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        choice = resp.json()["choices"][0]
-        text = _tidy(choice["message"]["content"], cut_off=choice.get("finish_reason") == "length")
+        for _ in range(2):  # one retry when an Arabic letter comes back in English
+            resp = requests.post(
+                os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/") + "/chat/completions",
+                headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', 'ollama')}"},
+                json={"model": model, "temperature": 0.2, "max_tokens": 600, "messages": [
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user", "content": f"{IN_LANG[lang]}\nFacts:\n" + json.dumps(facts, indent=1)},
+                ]},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            choice = resp.json()["choices"][0]
+            text = _tidy(choice["message"]["content"], cut_off=choice.get("finish_reason") == "length")
+            if _in_language(text, lang):
+                break
+        else:
+            raise ValueError(f"model didn't write in {LANGS[lang]}")
         bad = _invented(text, facts)
         if bad:
             raise ValueError(f"model wrote amounts or phone numbers not in the record: {bad}")
