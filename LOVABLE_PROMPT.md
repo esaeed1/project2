@@ -173,3 +173,58 @@ under the form.
   "url": "https://pta.waynecounty.com/", "note": "Owner-occupants can get IRSPA (5-year plan, 6% interest) or REGSPA. Hardship? Ask about DOOE, an extension, and Pay As You Stay (PAYS), which lowers back taxes."}]
 ```
 Render each as a card: name, note, a "Call" button (`tel:`) when `phone` is set, and a "Website" link.
+
+## Staff page: `/staff` (never linked from the public page)
+
+A separate route where the outreach team mails warning postcards to RED homes
+through Lob, a print-and-mail service. Desktop-first table, same colors.
+
+1. Ask for the staff key (password field "Staff key", button "Open"). Keep it in
+   `sessionStorage` and send it as the header `X-Staff-Key` on both calls below.
+   On a 401, clear it and ask again ("Wrong staff key").
+2. `GET {API_URL}/api/staff/red`:
+
+```json
+{
+  "mailer": "test",
+  "homes": [
+    {"key": "1234 EXAMPLE", "address": "1234 EXAMPLE, DETROIT MI 48223", "parcel_id": "22000000.",
+     "total_due": 2140.0, "deadline": "2027-03-31", "days_left": 158,
+     "checked_at": "2026-10-24T11:02:13", "postcard": null},
+    {"key": "5678 EXAMPLE", "address": "5678 EXAMPLE, DETROIT MI 48228", "parcel_id": "22000001.",
+     "total_due": 3410.5, "deadline": "2027-03-31", "days_left": 158,
+     "checked_at": "2026-10-24T10:40:02",
+     "postcard": {"id": "psc_123", "url": "https://lob-assets.com/...pdf",
+                  "expected_delivery": "2026-10-30", "sent_at": "2026-10-24 16:16:20"}}
+  ]
+}
+```
+
+- A banner from `mailer`: `"test"` amber, "Test mode: Lob makes a PDF proof of each
+  card and mails nothing."; `"live"` red, "Live: cards are printed and mailed.";
+  `null` gray, "No mailer connected. Set LOB_API_KEY on the server.", and disable mailing.
+- Above the table: "{homes.length} homes face foreclosure within 6 months · {n} mailed".
+- Table columns: checkbox, Address, Days left, Owed, Last checked, Postcard. Postcard
+  shows "Mailed {sent_at as a date}, arrives about {expected_delivery}" and a
+  "View card" link to `postcard.url` (the PDF proof, new tab), or "Not mailed".
+  Homes with a postcard can't be selected.
+- A "Select all not mailed" checkbox and a sticky button "Mail {n} postcards". It
+  asks first: "Mail {n} postcards through Lob?" (live mode adds "Real cards will be
+  printed and mailed.").
+3. `POST {API_URL}/api/staff/postcards` with body `{"keys": [...]}`, the `key` of each
+   selected home. Many homes can take a minute: show "Sending to Lob…".
+
+```json
+{"mailer": "test", "results": [
+  {"key": "1234 EXAMPLE", "address": "1234 EXAMPLE, DETROIT MI 48223", "ok": true,
+   "postcard": {"id": "psc_456", "url": "https://lob-assets.com/...pdf", "expected_delivery": "2026-10-30"}},
+  {"key": "9012 EXAMPLE", "address": "9012 EXAMPLE, DETROIT MI 48204", "ok": false,
+   "error": "No longer RED (now none)."}
+]}
+```
+
+Show "{ok count} postcards sent", list each failure with its address and `error`,
+then reload the list. Errors (400 / 401 / 503) return `{"error": "..."}`.
+
+In mock mode, return the example list above (with `mailer: "test"`), and answer a
+send by marking those homes mailed with `url: "#"`.

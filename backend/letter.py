@@ -7,11 +7,13 @@ an open-weight model through any OpenAI-compatible endpoint.
   LLM_MODEL     default qwen2.5:1.5b (Apache-2.0, ~1 GB, handles Arabic; llama3.1:8b writes better)
   LLM_API_KEY   only for hosted endpoints (Groq, Together, Hugging Face router)
 
-If the model can't be reached, returns the rule-based English message so the
-page never breaks.
+If the model can't be reached, or writes a dollar amount or phone number that
+isn't in the facts, returns the rule-based English message so the page never
+breaks or misleads.
 """
 import json
 import os
+import re
 
 import requests
 
@@ -31,6 +33,21 @@ SYSTEM = (
 )
 
 
+MONEY = re.compile(r"\$\s?(\d[\d,]*(?:\.\d{1,2})?)")
+PHONE = re.compile(r"\(?\b(\d{3})\)?[-.\s]?(\d{3})[-.\s](\d{4})\b")
+
+
+def _invented(text: str, result: dict) -> list[str]:
+    """Dollar amounts and phone numbers in the letter that aren't in the lookup result."""
+    amounts = {round(result.get("total_due") or 0, 2)} | {
+        round(y[k], 2) for y in result.get("years", []) for k in ("tax", "interest_fees", "due")}
+    amounts |= {round(float(a.replace(",", "")), 2) for a in MONEY.findall(result.get("message", ""))}
+    phones = {re.sub(r"\D", "", h["phone"]) for h in result.get("help", []) if h.get("phone")}
+    phones |= {"".join(p) for p in PHONE.findall(result.get("message", ""))}
+    return ([f"${a}" for a in MONEY.findall(text) if round(float(a.replace(",", "")), 2) not in amounts]
+            + ["-".join(p) for p in PHONE.findall(text) if "".join(p) not in phones])
+
+
 def letter(result: dict, lang: str = "en") -> dict:
     lang = lang if lang in LANGS else "en"
     facts = {k: result.get(k) for k in
@@ -43,16 +60,21 @@ def letter(result: dict, lang: str = "en") -> dict:
         resp = requests.post(
             os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/") + "/chat/completions",
             headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', 'ollama')}"},
-            json={"model": model, "temperature": 0.2, "messages": [
+            json={"model": model, "temperature": 0.2, "max_tokens": 600, "messages": [
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": f"Write the letter in {LANGS[lang]}.\nFacts:\n"
                                             + json.dumps(facts, indent=1)},
             ]},
-            timeout=90,
+            timeout=120,
         )
         resp.raise_for_status()
-        return {"lang": lang, "model": model,
-                "letter": resp.json()["choices"][0]["message"]["content"].strip()}
+        text = resp.json()["choices"][0]["message"]["content"]
+        # small models still write "Dear [Name]" / "[Your Name]" lines: drop them
+        text = "\n".join(l for l in text.splitlines() if not re.search(r"\[[^\]]+\]", l)).strip()
+        bad = _invented(text, result)
+        if bad:
+            raise ValueError(f"model wrote amounts or phone numbers not in the record: {bad}")
+        return {"lang": lang, "model": model, "letter": text}
     except Exception as exc:  # noqa: BLE001
         lines = [result["message"], ""] + [
             f"- {h['name']}: {h['phone'] or h['url']}" for h in result.get("help", [])]
