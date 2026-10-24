@@ -88,7 +88,7 @@ When `at_risk` is true, show:
 ## Plain-language letter: `GET /api/letter?address=...&lang=en|es|ar`
 
 ```json
-{"lang": "es", "model": "llama3.1:8b", "letter": "Estimado propietario: ..."}
+{"lang": "es", "model": "qwen2.5:1.5b", "letter": "Estimado propietario: ..."}
 ```
 
 The letter is written by an open-source AI model, which can take 10–30 seconds,

@@ -35,6 +35,18 @@ import requests
 
 PTA = "https://pta.waynecounty.com/Home/SearchResult"
 DETROIT = "01"
+# The search form's MUN_CD options (Twp/City dropped where people don't type them).
+MUNICIPALITIES = {
+    "ALLEN PARK": "30", "BELLEVILLE": "31", "BROWNSTOWN": "70", "CANTON": "71", "DEARBORN": "32",
+    "DEARBORN HEIGHTS": "33", "DETROIT": "01", "ECORSE": "34", "FLAT ROCK": "58",
+    "GARDEN CITY": "35", "GIBRALTAR": "36", "GROSSE ILE": "73", "GROSSE POINTE": "37",
+    "GROSSE POINTE FARMS": "38", "GROSSE POINTE PARK": "39", "GROSSE POINTE WOODS": "40",
+    "HAMTRAMCK": "41", "HARPER WOODS": "42", "HIGHLAND PARK": "43", "HURON": "75", "INKSTER": "44",
+    "LINCOLN PARK": "45", "LIVONIA": "46", "MELVINDALE": "47", "NORTHVILLE": "48", "PLYMOUTH": "49",
+    "REDFORD": "79", "RIVER ROUGE": "50", "RIVERVIEW": "51", "ROCKWOOD": "52", "ROMULUS": "80",
+    "SOUTHGATE": "53", "SUMPTER": "81", "TAYLOR": "60", "TRENTON": "54", "VAN BUREN": "83",
+    "WAYNE": "55", "WESTLAND": "56", "WOODHAVEN": "59", "WYANDOTTE": "57",
+}
 TIMEOUT = 40
 MIN_GAP = 0.5            # seconds between PTA requests, across all threads
 CACHE_HOURS = 12
@@ -78,6 +90,28 @@ def address_key(addr: str) -> str:
     while len(words) > 2 and words[-1] in SUFFIXES:
         words.pop()
     return " ".join(words)
+
+
+def split_city(addr: str) -> tuple[str, str]:
+    """'52 Bartlett St Highland Park, MI 48203' -> ('52 BARTLETT ST', '43'). Detroit by default.
+
+    The city is only taken from after a comma or the end of the street part, since
+    many streets share a city's name (4305 Trenton is in Detroit).
+    """
+    street, _, rest = addr.upper().partition(",")
+    words = re.sub(r"[^A-Z0-9 ]", " ", street).split()
+    rest = f" {' '.join(re.sub(r'[^A-Z0-9 ]', ' ', rest).split())} "
+    while len(words) > 2 and (words[-1] in ("MI", "MICHIGAN") or re.fullmatch(r"\d{5}", words[-1])):
+        words.pop()
+    for name in sorted(MUNICIPALITIES, key=len, reverse=True):
+        if f" {name} " in rest:
+            return " ".join(words), MUNICIPALITIES[name]
+        n = name.split()
+        left = words[:-len(n)]
+        if (words[-len(n):] == n and len(left) >= 2
+                and left[-1] not in ("N", "S", "E", "W", "NORTH", "SOUTH", "EAST", "WEST")):
+            return " ".join(left), MUNICIPALITIES[name]
+    return " ".join(words), DETROIT
 
 
 def _money(v: str) -> float:
@@ -163,7 +197,7 @@ def _long(d: date) -> str:
     return f"{d:%B} {d.day}, {d.year}"
 
 
-def assess(result: dict, today: date | None = None) -> dict:
+def assess(result: dict, today: date | None = None, detroit: bool = True) -> dict:
     """Add risk level, deadline and a plain-language message to a parsed result.
 
     level: none | yellow (delinquent) | orange (forfeited) | red (deadline within 6 months or past)
@@ -193,27 +227,50 @@ def assess(result: dict, today: date | None = None) -> dict:
            f"ownership of this house. That is {days} days from today.")
     if level != "red" and not forfeited:
         msg += f" Paying before {_long(date(oldest + 2, 3, 1))} avoids extra forfeiture fees."
-    if today <= HOPE_DEADLINE:
+    if not detroit:
+        msg += " If money is tight, ask your city about its poverty tax exemption."
+    elif today <= HOPE_DEADLINE:
         msg += (f" If money is tight, apply for the HOPE tax exemption by {_long(HOPE_DEADLINE)}.")
 
     return {**result, "at_risk": True, "level": level, "oldest_year": oldest,
             "deadline": deadline.isoformat(), "days_left": days, "message": msg}
 
 
+def _cache_key(address: str) -> str:
+    street, mun = split_city(address)
+    key = address_key(street)
+    return key if mun == DETROIT else f"{mun} {key}"
+
+
 def lookup(address: str) -> dict:
     """Live lookup: address -> assessed result with help links. Raises on network errors."""
-    key = address_key(address)
+    street, mun = split_city(address)
+    key = address_key(street)
+    detroit = mun == DETROIT
+    help_links = HELP if detroit else [h for h in HELP if "HOPE" not in h["name"]]
     m = re.match(r"^(\d{1,6})\s+(.+)$", key)
     if not m:
         return {"query": address, "found": False, "level": "unknown", "at_risk": None,
                 "message": "Enter a street address with a house number, like 14390 Dolphin.",
-                "help": HELP}
-    parcel = parcel_for(key)
+                "help": help_links}
+    parcel = parcel_for(key) if detroit else None  # parcels.csv is Detroit only
     form = ({"PARCEL_ID": parcel, "searchByAddressInd": "ParcelSearch"} if parcel else
-            {"PROP_STREET_NBR": m.group(1), "PROP_STREET_NM": m.group(2),
+            {"MUN_CD": mun, "PROP_STREET_NBR": m.group(1), "PROP_STREET_NM": m.group(2),
              "searchByAddressInd": "AddressSearch"})
-    result = assess(parse(_fetch(form)))
-    return {"query": address, **result, "help": HELP,
+    page = _fetch(form)
+    result = parse(page)
+    if not result["found"]:
+        # Several parcels share the address: the county answers with a pick list
+        # (JSON in the page). Open each match and keep the one with the most owed.
+        grid = re.search(r"var searchGridArray = (\[.*?\]);", page, re.S)
+        rows = [r for r in json.loads(grid.group(1))
+                if address_key(r.get("PROP_STREET_NM") or "") == key] if grid else []
+        pages = [parse(_fetch({"MUN_CD": mun, "PARCEL_ID": r["PARCEL_ID"],
+                               "searchByAddressInd": "ParcelSearch"})) for r in rows[:3]]
+        result = max(pages, key=lambda r: (r["found"], r.get("total_due") or 0), default=result)
+    result = assess(result, detroit=detroit)
+    city = next(name for name, code in MUNICIPALITIES.items() if code == mun).title()
+    return {"query": address, **result, "city": city, "help": help_links,
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
 
 
@@ -234,7 +291,7 @@ def connect() -> sqlite3.Connection:
 
 def cached_lookup(address: str, max_age_hours: float = CACHE_HOURS) -> dict:
     """lookup() through the SQLite cache, so the demo and the map build don't re-hit the county."""
-    key = address_key(address)
+    key = _cache_key(address)
     con = connect()
     try:
         row = con.execute("SELECT result, checked_at FROM lookups WHERE key = ?", (key,)).fetchone()

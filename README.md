@@ -19,10 +19,10 @@ Y+3** if they're still unpaid. So anyone with unpaid 2024 taxes today has until
 
 | Path | What it does |
 |---|---|
-| `backend/lookup.py` | Address to Wayne County delinquent-tax rows (pta.waynecounty.com), then risk level, deadline and a plain-language message. Cached in SQLite. |
+| `backend/lookup.py` | Address to Wayne County delinquent-tax rows (pta.waynecounty.com), then risk level, deadline and a plain-language message. Detroit by default; any Wayne County city named in the address (Highland Park, Hamtramck, …) also works. Cached in SQLite. |
 | `backend/fetch_parcels.py` | Downloads every Detroit parcel (City of Detroit Open Data) to `data/parcels.csv`. |
 | `backend/build_map.py` | Samples owner-occupied homes per neighborhood, looks each up (throttled), and aggregates by neighborhood for the map. |
-| `backend/letter.py` | Plain-language letter in English, Spanish or Arabic from an **open-weight model** (Llama via Ollama, or any OpenAI-compatible host). |
+| `backend/letter.py` | Plain-language letter in English, Spanish or Arabic from an **open-weight model** (Qwen 2.5 via Ollama, or any OpenAI-compatible host). |
 | `backend/notify.py` | SMS (Twilio) and email (Resend) alerts. `python notify.py` re-checks every sign-up. |
 | `backend/app.py` | Flask JSON API used by the front end. |
 | `LOVABLE_PROMPT.md` | Front-end spec and API contract to paste into Lovable. |
@@ -45,7 +45,7 @@ Try it: `http://localhost:5000/api/lookup?address=14325 Rockdale`
 |---|---|
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_PHONE` | SMS alerts |
 | `RESEND_API_KEY`, `FROM_EMAIL` | Email alerts |
-| `LLM_BASE_URL` (default `http://localhost:11434/v1`), `LLM_MODEL` (default `llama3.1:8b`), `LLM_API_KEY` | Plain-language letters. Without a model, the API returns the rule-based message. |
+| `LLM_BASE_URL` (default `http://localhost:11434/v1`), `LLM_MODEL` (default `qwen2.5:1.5b`, run `ollama pull qwen2.5:1.5b`), `LLM_API_KEY` | Plain-language letters. Without a model, the API returns the rule-based message. |
 
 ### Expose the API to the Lovable front end
 

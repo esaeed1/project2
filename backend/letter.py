@@ -4,7 +4,7 @@ owe, your deadline, your next step) in English, Spanish or Arabic, written by
 an open-weight model through any OpenAI-compatible endpoint.
 
   LLM_BASE_URL  default http://localhost:11434/v1   (Ollama)
-  LLM_MODEL     default llama3.1:8b
+  LLM_MODEL     default qwen2.5:1.5b (Apache-2.0, ~1 GB, handles Arabic; llama3.1:8b writes better)
   LLM_API_KEY   only for hosted endpoints (Groq, Together, Hugging Face router)
 
 If the model can't be reached, returns the rule-based English message so the
@@ -32,7 +32,7 @@ def letter(result: dict, lang: str = "en") -> dict:
     facts = {k: result.get(k) for k in
              ("address", "at_risk", "total_due", "years", "deadline", "days_left", "message")}
     facts["help"] = [{k: h[k] for k in ("name", "phone", "url")} for h in result.get("help", [])]
-    model = os.environ.get("LLM_MODEL", "llama3.1:8b")
+    model = os.environ.get("LLM_MODEL", "qwen2.5:1.5b")
     try:
         resp = requests.post(
             os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/") + "/chat/completions",
