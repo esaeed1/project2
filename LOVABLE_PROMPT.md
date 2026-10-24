@@ -17,6 +17,11 @@ All data comes from an existing JSON API. Put the base URL in one constant,
 While the API is unreachable, show a friendly error ("We can't reach the tax
 records right now. Try again in a minute.") and never crash.
 
+**Mock mode:** if `API_URL` is an empty string, don't call the network. Return
+the example responses below (after a 600 ms delay) so the whole UI can be built
+and previewed before the API is online. For the map mock, draw 3 made-up
+neighborhood polygons around Detroit with different `color` values.
+
 ## Page layout (top to bottom)
 
 1. **Hero + address lookup.** Headline: "Is your house at risk of tax foreclosure?"

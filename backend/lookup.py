@@ -81,18 +81,24 @@ def _text(fragment: str) -> str:
     return re.sub(r"\s+", " ", htmllib.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
 
 
-def _fetch(number: str, street: str) -> str:
+def _fetch(number: str, street: str, retries: int = 2) -> str:
     global _last
     with _lock:
         wait = MIN_GAP - (time.time() - _last)
         if wait > 0:
             time.sleep(wait)
         _last = time.time()
-    resp = requests.post(PTA, data={
-        "MUN_CD": DETROIT, "PARCEL_ID": "", "PARCEL_SEARCH_MSG": "",
-        "PROP_STREET_NBR": number, "PROP_STREET_NM": street,
-        "frequency": "on", "searchByAddressInd": "AddressSearch",
-    }, headers={"User-Agent": "Mozilla/5.0"}, timeout=TIMEOUT)
+    try:
+        resp = requests.post(PTA, data={
+            "MUN_CD": DETROIT, "PARCEL_ID": "", "PARCEL_SEARCH_MSG": "",
+            "PROP_STREET_NBR": number, "PROP_STREET_NM": street,
+            "frequency": "on", "searchByAddressInd": "AddressSearch",
+        }, headers={"User-Agent": "Mozilla/5.0"}, timeout=TIMEOUT)
+    except requests.ConnectionError:  # the county's server resets ~1-2% of connections
+        if not retries:
+            raise
+        time.sleep(2)
+        return _fetch(number, street, retries - 1)
     resp.raise_for_status()
     return resp.text
 
