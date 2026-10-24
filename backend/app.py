@@ -52,6 +52,11 @@ def county_down(exc):
     return jsonify(error="Wayne County's tax site didn't answer. Try again in a minute."), 502
 
 
+def _public(result: dict) -> dict:
+    """The taxpayer's name is only for staff and the mailed card, not the public page."""
+    return {k: v for k, v in result.items() if k != "owner"}
+
+
 def _phone(raw: str) -> str | None:
     digits = re.sub(r"\D", "", raw)
     digits = "1" + digits if len(digits) == 10 else digits
@@ -63,7 +68,7 @@ def api_lookup():
     address = request.args.get("address", "").strip()
     if not address:
         return jsonify(error="address is required"), 400
-    return jsonify(cached_lookup(address))
+    return jsonify(_public(cached_lookup(address)))
 
 
 @app.get("/api/letter")
@@ -106,7 +111,7 @@ def api_signup():
     con.commit()
     con.close()
     sent = notify(phone, email, result)
-    return jsonify(ok=True, status=result, sent={k: v.get("success") for k, v in sent.items()})
+    return jsonify(ok=True, status=_public(result), sent={k: v.get("success") for k, v in sent.items()})
 
 
 @app.get("/api/staff/red")

@@ -192,6 +192,7 @@ def parse(page: str) -> dict:
     if not addr:
         return {"found": False}
     parcel = re.search(r"Parcel ID.*?<label[^>]*>\s*([^<]+)", page, re.S)
+    owner = re.search(r'<label id="lblTaxPayer1">([^<]*)</label>', page)
 
     grid = page[page.find('id="tblTaxGrid"'):]
     grid = grid[grid.find("</thead>"):grid.find("</table>")]
@@ -217,6 +218,7 @@ def parse(page: str) -> dict:
         "found": True,
         "address": _text(addr.group(1)),
         "parcel_id": parcel.group(1).strip() if parcel else None,
+        "owner": _text(owner.group(1)) or None if owner else None,  # taxpayer; staff/mail only
         "years": years,
         "total_due": _money(total.group(2)) if total else round(sum(y["due"] for y in years), 2),
         "pay_by": total.group(1) if total else None,
