@@ -33,19 +33,36 @@ SYSTEM = (
 )
 
 
-MONEY = re.compile(r"\$\s?(\d[\d,]*(?:\.\d{1,2})?)")
+MONEY = re.compile(r"\$\s?(\d(?:[\d,]*\d)?(?:\.\d{1,2})?)")
 PHONE = re.compile(r"\(?\b(\d{3})\)?[-.\s]?(\d{3})[-.\s](\d{4})\b")
 
 
-def _invented(text: str, result: dict) -> list[str]:
-    """Dollar amounts and phone numbers in the letter that aren't in the lookup result."""
-    amounts = {round(result.get("total_due") or 0, 2)} | {
-        round(y[k], 2) for y in result.get("years", []) for k in ("tax", "interest_fees", "due")}
-    amounts |= {round(float(a.replace(",", "")), 2) for a in MONEY.findall(result.get("message", ""))}
-    phones = {re.sub(r"\D", "", h["phone"]) for h in result.get("help", []) if h.get("phone")}
-    phones |= {"".join(p) for p in PHONE.findall(result.get("message", ""))}
-    return ([f"${a}" for a in MONEY.findall(text) if round(float(a.replace(",", "")), 2) not in amounts]
+def _amount(s: str) -> float:
+    return round(float(s.replace(",", "")), 2)
+
+
+def _invented(text: str, facts: dict) -> list[str]:
+    """Dollar amounts and phone numbers in the letter that aren't in the facts it was given."""
+    context = json.dumps(facts, ensure_ascii=False)
+    amounts = {_amount(a) for a in MONEY.findall(context)} | {round(facts.get("total_due") or 0, 2)} | {
+        round(y[k], 2) for y in facts.get("years") or [] for k in ("tax", "interest_fees", "due")}
+    phones = {"".join(p) for p in PHONE.findall(context)}
+    return ([f"${a}" for a in MONEY.findall(text) if _amount(a) not in amounts]
             + ["-".join(p) for p in PHONE.findall(text) if "".join(p) not in phones])
+
+
+def _tidy(text: str, cut_off: bool) -> str:
+    """Drop "[Name]" placeholder lines and repeated lines, and a half-written last line."""
+    lines, seen = [], set()
+    for line in text.strip().splitlines():
+        key = line.strip()
+        if re.search(r"\[[^\]]+\]", line) or (key and key in seen):
+            continue
+        seen.add(key)
+        lines.append(line)
+    if cut_off and lines:
+        lines.pop()
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 def letter(result: dict, lang: str = "en") -> dict:
@@ -68,10 +85,9 @@ def letter(result: dict, lang: str = "en") -> dict:
             timeout=120,
         )
         resp.raise_for_status()
-        text = resp.json()["choices"][0]["message"]["content"]
-        # small models still write "Dear [Name]" / "[Your Name]" lines: drop them
-        text = "\n".join(l for l in text.splitlines() if not re.search(r"\[[^\]]+\]", l)).strip()
-        bad = _invented(text, result)
+        choice = resp.json()["choices"][0]
+        text = _tidy(choice["message"]["content"], cut_off=choice.get("finish_reason") == "length")
+        bad = _invented(text, facts)
         if bad:
             raise ValueError(f"model wrote amounts or phone numbers not in the record: {bad}")
         return {"lang": lang, "model": model, "letter": text}
